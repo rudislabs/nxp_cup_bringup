@@ -9,7 +9,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from os import getlogin
 
-world_path = '/home/{:s}/git/nxp_gazebo/worlds/nxp_raceway_octagon.world'.format(str(getlogin()))
+world_path = '/home/{:s}/git/nxp_gazebo/worlds/nxp_raceway.world'.format(str(getlogin()))
 
 px4_path = '/home/{:s}/git/PX4-Autopilot/build/px4_sitl_rtps'.format(str(getlogin()))
 
@@ -17,12 +17,24 @@ sitl_output_path = "/tmp/sitl_nxp_cupcar"
 
 sitl_folder_cmd = ['mkdir -p \"{:s}\"'.format(sitl_output_path)]
 
-px4_cmd = 'export PX4_SIM_MODEL=\"nxp_cupcar\"; eval \"\"{:s}/bin/px4\" -w {:s} \"{:s}/etc\" -s etc/init.d-posix/rcS\"; bash'.format(px4_path, sitl_output_path, px4_path)
+px4_cmd = '''export PX4_SIM_MODEL=\"nxp_cupcar\"; eval \"\"{:s}/bin/px4\" 
+        -w {:s} \"{:s}/etc\" -s etc/init.d-posix/rcS\"; bash'''.format(
+            px4_path, sitl_output_path, px4_path)
 
-xterm_cmd = ['xterm -hold  -e \'{:s}\''.format(px4_cmd)]
+mrtps_agent_cmd = '''eval \"micrortps_agent -t 
+        {:s}\"; bash'''.format("UDP")
 
-print(px4_cmd)
-print(xterm_cmd)
+xterm_px4_cmd = ['''xterm -hold -T \"{:s}\" 
+        -n \"{:s}\" -e \'{:s}\''''.format(
+            sitl_output_path, sitl_output_path,
+            px4_cmd).replace("\n","").replace("    ","")]
+
+xterm_mrtps_agent_cmd = ['''xterm -hold -T \"{:s}\" 
+        -n \"{:s}\" -e \'{:s}\''''.format(
+            "micrortps_agent", "micrortps_agent",
+            mrtps_agent_cmd).replace("\n",
+                "").replace("    ","")]
+
 
 def generate_launch_description():
     ld = LaunchDescription([
@@ -46,9 +58,16 @@ def generate_launch_description():
     
     ld.add_action(make_sitl_folder)
 
+    micrortps_agent = ExecuteProcess(
+        cmd=xterm_mrtps_agent_cmd,
+        shell=True
+    )
+    
+    ld.add_action(micrortps_agent)
+
 
     px4_posix = ExecuteProcess(
-        cmd=xterm_cmd,
+        cmd=xterm_px4_cmd,
         shell=True
     )
     
