@@ -4,70 +4,100 @@ from launch.actions import DeclareLaunchArgument
 from launch.actions import SetLaunchConfiguration
 from launch.actions import IncludeLaunchDescription
 from launch.actions import ExecuteProcess
+from launch.actions import LogInfo
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from os import getlogin
 
-world_path = '/home/{:s}/git/nxp_gazebo/worlds/nxp_raceway.world'.format(str(getlogin()))
+# Default path to world file
+default_world_path = '/home/{:s}/git/nxp_gazebo/worlds/nxp_raceway.world'.format(str(getlogin()))
 
+# Path to PX4 binary (in this case _sitl_rtps, could also be _sitl_default)
 px4_path = '/home/{:s}/git/PX4-Autopilot/build/px4_sitl_rtps'.format(str(getlogin()))
 
+# Path for PX4 binary storage
 sitl_output_path = "/tmp/sitl_nxp_cupcar"
 
+# Command to make storage folder
 sitl_folder_cmd = ['mkdir -p \"{:s}\"'.format(sitl_output_path)]
 
+
+# Command to export model and run PX4 binary
 px4_cmd = '''export PX4_SIM_MODEL=\"nxp_cupcar\"; eval \"\"{:s}/bin/px4\" 
         -w {:s} \"{:s}/etc\" -s etc/init.d-posix/rcS\"; bash'''.format(
             px4_path, sitl_output_path, px4_path)
 
-mrtps_agent_cmd = '''eval \"micrortps_agent -t 
+# Command to run micrortps agent
+urtps_agent_cmd = '''eval \"micrortps_agent -t 
         {:s}\"; bash'''.format("UDP")
 
-xterm_px4_cmd = ['''xterm -hold -T \"{:s}\" 
-        -n \"{:s}\" -e \'{:s}\''''.format(
+# Command to run micrortps client
+urtps_client_cmd = '''eval \"{:s}/bin/px4-micrortps_client 
+            start -t UDP\"'''.format(px4_path)
+
+# Xterm command to name xterm window and run px4_cmd
+xterm_px4_cmd = ['''xterm -hold -T \"PX4 NSH {:s}\" 
+        -n \"PX4 NSH {:s}\" -e \'{:s}\''''.format(
             sitl_output_path, sitl_output_path,
             px4_cmd).replace("\n","").replace("    ","")]
 
-xterm_mrtps_agent_cmd = ['''xterm -hold -T \"{:s}\" 
+# Xterm command to name xterm window and run urtps_agent_cmd
+xterm_urtps_agent_cmd = ['''xterm -hold -T \"{:s}\" 
         -n \"{:s}\" -e \'{:s}\''''.format(
             "micrortps_agent", "micrortps_agent",
-            mrtps_agent_cmd).replace("\n",
+            urtps_agent_cmd).replace("\n",
+                "").replace("    ","")]
+
+# Xterm command to name xterm window and run urtps_client_cmd
+xterm_urtps_client_cmd = ['''xterm -T \"{:s}\" 
+        -n \"{:s}\" -e \'{:s}\''''.format(
+            "micrortps_client", "micrortps_client",
+            urtps_client_cmd).replace("\n",
                 "").replace("    ","")]
 
 
 def generate_launch_description():
     ld = LaunchDescription([
-
+    	# World path argument
         DeclareLaunchArgument(
-            'world', default_value='/home/{:s}/git/nxp_gazebo/worlds/nxp_raceway_octagon.world'.format(str(getlogin())),
-            description='Specify world file name'),
+            'world_path', default_value= default_world_path,
+            description='Provide full world file path and name'),
+        LogInfo(msg=LaunchConfiguration('world_path')),
         ])
 
+    
+    # Get path to gazebo package
     gazebo_package_prefix = get_package_share_directory('gazebo_ros')
 
+    # Launch gazebo servo with world file from world_path
     gazebo_server = IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([gazebo_package_prefix,'/launch/gzserver.launch.py']),
-                launch_arguments={'world': str(world_path)}.items(),
+                launch_arguments={'world': LaunchConfiguration('world_path')}.items(),
                 )
 
+    # Make storage command
     make_sitl_folder = ExecuteProcess(
         cmd=sitl_folder_cmd,
+        name="make_sitl_folder",
         shell=True
     )
     
     ld.add_action(make_sitl_folder)
 
+    # Run agent command
     micrortps_agent = ExecuteProcess(
-        cmd=xterm_mrtps_agent_cmd,
+        cmd=xterm_urtps_agent_cmd,
+        name="xterm_urtps_agent",
         shell=True
     )
     
     ld.add_action(micrortps_agent)
 
-
+    # Run PX4 binary
     px4_posix = ExecuteProcess(
         cmd=xterm_px4_cmd,
+        name="xterm_px4_nsh",
         shell=True
     )
     
@@ -75,21 +105,33 @@ def generate_launch_description():
 
 
     # GAZEBO_MODEL_PATH has to be correctly set for Gazebo to be able to find the model
+    # Launch spawn model with nxp_cupcar
     spawn_entity = Node(package='gazebo_ros', executable='spawn_entity.py',
                         arguments=['-entity', 'nxp_cupcar', '-database', 'nxp_cupcar'],
-                        output='screen')
+                        name="spawn_nxp_cupcar", output='screen')
 
+    # Launch gazebo client
     gazebo_client = IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([gazebo_package_prefix,'/launch/gzclient.launch.py']))
 
+    # Run nxp_cup_vision node
     nxp_track_vision = Node(package="nxp_cup_vision", executable="nxp_track_vision",
+                            name="nxp_track_vision", 
                             parameters=[{"pyramid_down": 2},
                                         {"debug": True}])
+
+    # Run client command
+    micrortps_client = ExecuteProcess(
+        cmd=xterm_urtps_client_cmd,
+        name="xterm_urtps_client",
+        shell=True
+    )
 
     ld.add_action(gazebo_server)
     ld.add_action(spawn_entity)
     ld.add_action(gazebo_client)
     ld.add_action(nxp_track_vision)
+    ld.add_action(micrortps_client)
 
 
     return ld
