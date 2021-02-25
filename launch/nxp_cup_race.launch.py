@@ -9,6 +9,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from os import getlogin
+from time import sleep
 
 # Default path to world file
 default_world_path = '/home/{:s}/git/nxp_gazebo/worlds/nxp_raceway.world'.format(str(getlogin()))
@@ -116,7 +117,7 @@ def generate_launch_description():
 
     # Run nxp_cup_vision node
     nxp_track_vision = Node(package="nxp_cup_vision", executable="nxp_track_vision",
-                            name="nxp_track_vision", 
+                            name="nxp_track_vision", output='screen',
                             parameters=[{"pyramid_down": 2},
                                         {"debug": True}])
 
@@ -130,8 +131,13 @@ def generate_launch_description():
     ld.add_action(gazebo_server)
     ld.add_action(spawn_entity)
     ld.add_action(gazebo_client)
+    LogInfo(msg="\nWaiting to launch Track Vision...\n")
+    sleep(5)
     ld.add_action(nxp_track_vision)
+    LogInfo(msg="\nTrack Vision Launched!\n")
+    LogInfo(msg="\nWaiting to launch microRTPS Client...\n")
+    sleep(2)
     ld.add_action(micrortps_client)
-
+    LogInfo(msg="\nmicroRTPS Client Launched!\n")
 
     return ld
